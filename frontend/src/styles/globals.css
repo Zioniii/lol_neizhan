@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background: linear-gradient(135deg, #f5f7fa 0%, #e4e9f0 100%);
+    min-height: 100vh;
+  }
+
+  /* 自定义滚动条 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.12);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.22);
+  }
+}
+
+@layer components {
+  .glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+  }
+
+  .glass-card {
+    @apply glass rounded-3xl shadow-card;
+  }
+
+  .btn-primary {
+    @apply px-5 py-2.5 rounded-2xl font-medium text-white
+           bg-gradient-accent shadow-soft
+           hover:shadow-lift hover:scale-[1.02]
+           active:scale-[0.98]
+           transition-all duration-200 ease-out;
+  }
+
+  .btn-secondary {
+    @apply px-5 py-2.5 rounded-2xl font-medium text-gray-700
+           glass shadow-soft
+           hover:shadow-lift hover:bg-white/90
+           active:scale-[0.98]
+           transition-all duration-200 ease-out;
+  }
+
+  .btn-danger {
+    @apply px-5 py-2.5 rounded-2xl font-medium text-white
+           bg-red-500/90 shadow-soft
+           hover:bg-red-500 hover:shadow-lift
+           active:scale-[0.98]
+           transition-all duration-200 ease-out;
+  }
+
+  .input-glass {
+    @apply w-full px-4 py-3 rounded-2xl bg-white/60
+           border border-white/60
+           focus:outline-none focus:ring-2 focus:ring-accent-blue/30
+           focus:border-accent-blue/40 focus:bg-white/90
+           transition-all duration-200
+           placeholder:text-gray-400;
+  }
+
+  .tag {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium
+           glass shadow-sm;
+  }
+}
