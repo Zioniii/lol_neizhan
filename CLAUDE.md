@@ -76,6 +76,26 @@ pyinstaller LOL-Sync-Agent.spec
 # Outputs to build/LOL-Sync-Agent/
 ```
 
+## Production Server
+
+- **IP**: `122.51.14.250` (Tencent Cloud, OpenCloudOS)
+- **SSH**: `root@122.51.14.250` (key-based auth, no password needed)
+- **Deploy path**: `/www/wwwroot/civilwar.top`
+- **Service**: `lol-neizhan.service` (systemd, enabled for auto-start on boot)
+- **Backend**: Python FastAPI on port 8766, managed via systemd
+- **Frontend**: Built to `frontend/dist/`, served by FastAPI static mount
+- **Database**: `/www/wwwroot/civilwar.top/lol_neizhan.db` (SQLite)
+- **Service management**:
+  ```bash
+  systemctl restart lol-neizhan.service   # restart backend
+  systemctl status lol-neizhan.service    # check status
+  systemctl stop lol-neizhan.service      # stop
+  journalctl -u lol-neizhan.service -n 50 # view recent logs
+  ```
+- **Deploy**: Build frontend locally (`npm run build`), SCP project files to server, `systemctl restart lol-neizhan.service`
+- **API base URL**: `http://122.51.14.250:8766/api`
+- **Notes**: Port 8766 is not publicly exposed — access API via localhost on the server, or via nginx reverse proxy on civilwar.top
+
 ## API Routes
 
 | Prefix | Purpose | LCU Required |
