@@ -14,6 +14,7 @@ class SummonerCreate(BaseModel):
 class SummonerUpdate(BaseModel):
     nickname: Optional[str] = None
     is_active: Optional[bool] = None
+    puuid: Optional[str] = None
 
 
 class SummonerOut(BaseModel):

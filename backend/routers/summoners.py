@@ -63,6 +63,24 @@ def create_summoner(
     return summoner
 
 
+@router.put("/{summoner_id}/puuid", response_model=SummonerOut)
+def update_summoner_puuid(
+    summoner_id: int,
+    data: SummonerUpdate,
+    db: Session = Depends(get_db),
+):
+    """Agent 通过本地 LCU 解析到 PUUID 后调用此接口更新"""
+    s = db.query(Summoner).filter(Summoner.id == summoner_id).first()
+    if not s:
+        raise HTTPException(404, "召唤师不存在")
+    if not data.puuid:
+        raise HTTPException(400, "puuid 不能为空")
+    s.puuid = data.puuid
+    db.commit()
+    db.refresh(s)
+    return s
+
+
 @router.put("/{summoner_id}", response_model=SummonerOut)
 def update_summoner(
     summoner_id: int,

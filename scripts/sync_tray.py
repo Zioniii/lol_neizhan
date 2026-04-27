@@ -200,6 +200,18 @@ class SyncWorker:
             self.last_sync_result = "没有可同步的选手"
             return
 
+        # 解析缺少 PUUID 的选手
+        try:
+            summoners = self._resolve_puuid(lcu, summoners)
+            # 过滤掉仍然没有 PUUID 的
+            summoners = [s for s in summoners if s.get("puuid")]
+        except Exception as e:
+            logger.warning(f"PUUID 解析异常: {e}")
+
+        if not summoners:
+            self.last_sync_result = "所有选手均无 PUUID，无法同步"
+            return
+
         sgp = SgpClient(entitle_token, session_token)
         total_pushed = 0
         total_skipped = 0
@@ -241,7 +253,30 @@ class SyncWorker:
     def _get_summoners(self) -> list[dict]:
         r = httpx.get(f"{self.server_url}/api/summoners", timeout=10)
         r.raise_for_status()
-        return [s for s in r.json() if s.get("is_active") and s.get("puuid")]
+        return [s for s in r.json() if s.get("is_active")]
+
+    def _resolve_puuid(self, lcu: LcuManager, summoners: list[dict]) -> list[dict]:
+        """解析缺少 PUUID 的选手，并更新到服务器"""
+        updated = []
+        for s in summoners:
+            if s.get("puuid"):
+                updated.append(s)
+                continue
+            try:
+                puuid = lcu.resolve_puuid(s["game_name"], s["tag_line"])
+                if puuid:
+                    s["puuid"] = puuid
+                    # 更新服务器
+                    httpx.put(
+                        f"{self.server_url}/api/summoners/{s['id']}/puuid",
+                        json={"puuid": puuid},
+                        timeout=10,
+                    )
+                    logger.info(f"  resolved PUUID for {s['nickname']}: {puuid}")
+            except Exception as e:
+                logger.warning(f"  failed to resolve PUUID for {s['nickname']}: {e}")
+            updated.append(s)
+        return updated
 
     def _push_games(self, server_id: str, region: str, games: list[dict]) -> dict:
         r = httpx.post(

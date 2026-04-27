@@ -87,8 +87,31 @@ def get_server_summoners(server_url: str, summoner_ids: list[int] | None) -> lis
         id_set = set(summoner_ids)
         all_summoners = [s for s in all_summoners if s["id"] in id_set]
 
-    active = [s for s in all_summoners if s.get("is_active") and s.get("puuid")]
+    active = [s for s in all_summoners if s.get("is_active")]
     return active
+
+
+def resolve_missing_puuid(lcu: LcuManager, server_url: str, summoners: list[dict]) -> list[dict]:
+    """解析缺少 PUUID 的选手并更新到服务器"""
+    updated = []
+    for s in summoners:
+        if s.get("puuid"):
+            updated.append(s)
+            continue
+        try:
+            puuid = lcu.resolve_puuid(s["game_name"], s["tag_line"])
+            if puuid:
+                s["puuid"] = puuid
+                httpx.put(
+                    f"{server_url}/api/summoners/{s['id']}/puuid",
+                    json={"puuid": puuid},
+                    timeout=10,
+                )
+                logger.info(f"  已解析 PUUID for {s['nickname']}: {puuid}")
+        except Exception as e:
+            logger.warning(f"  无法解析 PUUID for {s['nickname']}: {e}")
+        updated.append(s)
+    return updated
 
 
 def push_games(server_url: str, server_id: str, region: str, games: list[dict]) -> dict:
@@ -123,8 +146,15 @@ def run_sync(lcu: LcuManager, server_url: str, summoner_ids: list[int] | None, d
         logger.error(f"获取选手列表失败: {e}")
         return False
 
+    # 解析缺少 PUUID 的选手
+    try:
+        summoners = resolve_missing_puuid(lcu, server_url, summoners)
+        summoners = [s for s in summoners if s.get("puuid")]
+    except Exception as e:
+        logger.warning(f"PUUID 解析异常: {e}")
+
     if not summoners:
-        logger.warning("没有需要同步的选手（可能都缺少 PUUID）")
+        logger.warning("没有需要同步的选手（缺少 PUUID 且无法解析）")
         return False
 
     # 初始化 SGP 客户端
