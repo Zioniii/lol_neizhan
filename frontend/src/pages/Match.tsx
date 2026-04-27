@@ -8,43 +8,16 @@ import {
   type MatchOut,
   type SummonerOut,
 } from '../api'
+import {
+  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, RefreshCw,
+} from 'lucide-react'
 
 export default function MatchPage() {
   const qc = useQueryClient()
   const { data: summoners } = useQuery({ queryKey: ['summoners'], queryFn: listSummoners })
   const { data: matches } = useQuery({ queryKey: ['matches'], queryFn: listMatches })
-
   const active = summoners?.filter((s) => s.is_active) ?? []
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">内战分组</h2>
-        <p className="text-gray-500 mt-1">从选手池中勾选参战选手，随机分边</p>
-      </div>
-
-      <GroupingPanel summoners={active} />
-
-      {matches && matches.length > 0 && (
-        <div className="glass-card overflow-hidden">
-          <div className="px-6 py-4 border-b border-black/5">
-            <h3 className="font-bold">历史内战 ({matches.length}场)</h3>
-          </div>
-          <div className="divide-y divide-black/5">
-            {matches.map((m) => (
-              <MatchItem key={m.id} m={m} onDelete={() => {
-                deleteMatch(m.id).then(() => qc.invalidateQueries({ queryKey: ['matches'] }))
-              }} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function GroupingPanel({ summoners }: { summoners: SummonerOut[] }) {
-  const qc = useQueryClient()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [tempNames, setTempNames] = useState<string[]>([])
   const [tempInput, setTempInput] = useState('')
@@ -64,177 +37,182 @@ function GroupingPanel({ summoners }: { summoners: SummonerOut[] }) {
 
   const toggle = (id: number) => {
     const next = new Set(selected)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
+    if (next.has(id)) next.delete(id); else next.add(id)
     setSelected(next)
   }
-
   const addTemp = () => {
     const name = tempInput.trim()
     if (!name || tempNames.includes(name)) return
     setTempNames([...tempNames, name])
     setTempInput('')
   }
-
-  const removeTemp = (name: string) => {
-    setTempNames(tempNames.filter((n) => n !== name))
-  }
+  const removeTemp = (name: string) => setTempNames(tempNames.filter((n) => n !== name))
 
   const roll = () => {
     if (totalCount < 2) return
     setSpinning(true)
     setResult(null)
-    setTimeout(() => {
-      createMut.mutate({ ids: Array.from(selected), temps: tempNames })
-    }, 600)
+    setTimeout(() => createMut.mutate({ ids: Array.from(selected), temps: tempNames }), 600)
   }
 
   const blue = result?.participants.filter((p) => p.team === 0) ?? []
   const red = result?.participants.filter((p) => p.team === 1) ?? []
 
   return (
-    <div className="space-y-4">
-      {/* 固定选手选择 */}
-      <div className="glass-card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold">
-            固定选手 ({selected.size}人)
-          </h3>
-          <div className="flex gap-2">
-            <button
-              className="btn-secondary !px-3 !py-1.5 text-xs"
-              onClick={() => setSelected(new Set(summoners.map((s) => s.id)))}
-            >
-              全选
-            </button>
-            <button
-              className="btn-secondary !px-3 !py-1.5 text-xs"
-              onClick={() => setSelected(new Set())}
-            >
-              清空
-            </button>
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h2 className="text-3xl font-display tracking-wider text-slate-100">内战分组</h2>
+        <p className="text-slate-400 mt-2">选择选手，随机分边</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Left: Selection Panel */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Fixed Players */}
+          <div className="card rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                <Users className="w-4 h-4 text-slate-500" />
+                固定选手
+                <span className="badge">{selected.size}/{active.length}</span>
+              </h3>
+              <div className="flex gap-1">
+                <button className="btn-ghost text-xs" onClick={() => setSelected(new Set(active.map(s => s.id)))}>全选</button>
+                <button className="btn-ghost text-xs" onClick={() => setSelected(new Set())}>清空</button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-52 overflow-y-auto">
+              {active.map((s) => {
+                const isSel = selected.has(s.id)
+                return (
+                  <button key={s.id}
+                    className={`px-3 py-1.5 text-xs font-semibold transition-all rounded ${isSel
+                      ? 'bg-blue-500 text-white shadow-md'
+                      : 'bg-surface text-slate-400 border border-[#1E1E28] hover:bg-surface-light hover:text-slate-100'}`}
+                    onClick={() => toggle(s.id)}>
+                    {s.nickname}
+                  </button>
+                )
+              })}
+              {active.length === 0 && <p className="text-slate-600 text-sm py-4">选手池为空</p>}
+            </div>
           </div>
+
+          {/* Temp Players */}
+          <div className="card rounded-xl p-5">
+            <h3 className="font-bold text-slate-100 flex items-center gap-2 mb-3">
+              <UserPlus className="w-4 h-4 text-slate-500" />
+              临时玩家
+              {tempNames.length > 0 && <span className="badge">{tempNames.length}人</span>}
+            </h3>
+            <p className="text-sm text-slate-500 mb-3">不计战绩和胜率</p>
+            <div className="flex gap-2 mb-3">
+              <input type="text" className="input rounded flex-1" placeholder="输入昵称后回车"
+                value={tempInput} onChange={(e) => setTempInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addTemp()} />
+              <button className="btn-secondary !px-2.5 !py-1.5 text-xs" onClick={addTemp}>添加</button>
+            </div>
+            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+              {tempNames.map((name) => (
+                <span key={name} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <AlertCircle className="w-3 h-3" />{name}
+                  <button onClick={() => removeTemp(name)}><X className="w-3 h-3" /></button>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Roll Button */}
+          <button className={`btn-primary w-full text-sm py-3 rounded-lg ${spinning ? 'animate-pulse' : ''}`}
+            disabled={totalCount < 2 || createMut.isPending} onClick={roll}>
+            {spinning ? <>分边中...</>
+              : <><Shuffle className="w-4 h-4" />随机分组 ({totalCount}人)</>}
+          </button>
+          {totalCount < 2 && <p className="text-xs text-slate-600 text-center">至少选择 2 名选手</p>}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {summoners.map((s) => {
-            const isSel = selected.has(s.id)
-            return (
-              <button
-                key={s.id}
-                className={`px-4 py-2 rounded-2xl text-sm font-medium transition-all duration-200 ${
-                  isSel
-                    ? 'bg-gradient-blue text-white shadow-soft scale-105'
-                    : 'glass text-gray-600 hover:bg-white/70'
-                }`}
-                onClick={() => toggle(s.id)}
-              >
-                {s.nickname}
+
+        {/* Right: Result Panel */}
+        <div className="lg:col-span-3">
+          {result ? (
+            <div className="space-y-4 animate-slide-up">
+              {/* VS Banner */}
+              <div className="card rounded-lg p-4 text-center">
+                <div className="flex items-center justify-center gap-6 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-400 font-bold text-lg">蓝</span>
+                    <span className="text-blue-400 font-bold">{blue.length}人</span>
+                  </div>
+                  <span className="text-slate-600 text-xs font-bold tracking-[0.2em]">VS</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-red-400 font-bold">{red.length}人</span>
+                    <span className="text-red-400 font-bold text-lg">红</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Teams */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="team-blue rounded-lg p-4">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded text-xs font-bold mb-3 team-blue-header">
+                    <Trophy className="w-3.5 h-3.5" />蓝方
+                  </div>
+                  <div className="space-y-1.5">
+                    {blue.map((p) => (
+                      <div key={p.id}
+                        className={`py-2 px-3 rounded text-sm font-bold ${p.is_temporary ? 'bg-amber-500/10 text-amber-400' : 'bg-blue-500/10 text-blue-300'}`}>
+                        {p.summoner_nickname}
+                        {p.is_temporary && <span className="text-xs font-normal ml-1 opacity-60">(临时)</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="team-red rounded-lg p-4">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded text-xs font-bold mb-3 team-red-header">
+                    <Trophy className="w-3.5 h-3.5" />红方
+                  </div>
+                  <div className="space-y-1.5">
+                    {red.map((p) => (
+                      <div key={p.id}
+                        className={`py-2 px-3 rounded text-sm font-bold ${p.is_temporary ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-300'}`}>
+                        {p.summoner_nickname}
+                        {p.is_temporary && <span className="text-xs font-normal ml-1 opacity-60">(临时)</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <button className="btn-secondary w-full text-sm" onClick={() => setResult(null)}>
+                <RefreshCw className="w-4 h-4" />重新分组
               </button>
-            )
-          })}
-          {summoners.length === 0 && (
-            <p className="text-gray-400 text-sm py-4">选手池为空，请先添加选手</p>
+            </div>
+          ) : (
+            <div className="card rounded-lg h-full flex items-center justify-center p-8 min-h-[300px]">
+              <div className="text-center">
+                <Swords className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+                <p className="text-slate-500 text-sm">选择选手后点击分组，结果将显示在这里</p>
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      {/* 临时玩家 */}
-      <div className="glass-card p-5">
-        <h3 className="font-bold mb-3">
-          临时玩家 ({tempNames.length}人)
-        </h3>
-        <p className="text-xs text-gray-400 mb-3">临时玩家只参与分组，不计战绩和胜率</p>
-        <div className="flex gap-2 mb-3">
-          <input
-            type="text"
-            className="input-glass flex-1"
-            placeholder="输入玩家昵称，按回车添加"
-            value={tempInput}
-            onChange={(e) => setTempInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && addTemp()}
-          />
-          <button className="btn-secondary !px-3 !py-1.5 text-xs" onClick={addTemp}>
-            添加
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {tempNames.map((name) => (
-            <span
-              key={name}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-2xl bg-amber-50 text-amber-800 text-sm font-medium"
-            >
-              临时·{name}
-              <button className="text-amber-400 hover:text-amber-600 ml-1" onClick={() => removeTemp(name)}>×</button>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* 开始分组按钮 */}
-      <div className="text-center">
-        <button
-          className={`btn-primary text-lg px-10 py-3 ${
-            spinning ? 'animate-pulse' : ''
-          }`}
-          disabled={totalCount < 2 || createMut.isPending}
-          onClick={roll}
-        >
-          {spinning ? '🎲 分边中...' : '🎲 开始随机分组'}
-        </button>
-        {totalCount < 2 && (
-          <p className="text-xs text-gray-400 mt-2">至少选择 2 名选手</p>
-        )}
-        {totalCount >= 2 && (
-          <p className="text-xs text-gray-400 mt-2">
-            共 {totalCount} 人参战
-          </p>
-        )}
-      </div>
-
-      {/* 分组结果 */}
-      {result && (
-        <div className="grid grid-cols-2 gap-4 animate-in">
-          {/* 蓝方 */}
-          <div className="glass-card p-5 text-center border-t-4 border-t-blue-500">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-100 text-blue-700 text-sm font-bold mb-4">
-              蓝方 ({blue.length}人)
-            </div>
-            <div className="space-y-2">
-              {blue.map((p) => (
-                <div
-                  key={p.id}
-                  className={`py-2 px-4 rounded-2xl font-bold ${
-                    p.is_temporary
-                      ? 'bg-amber-50 text-amber-700'
-                      : 'bg-blue-50 text-blue-900'
-                  }`}
-                >
-                  {p.summoner_nickname}
-                  {p.is_temporary && <span className="text-xs font-normal ml-1 opacity-60">(临时)</span>}
-                </div>
-              ))}
-            </div>
+      {/* History */}
+      {matches && matches.length > 0 && (
+        <div className="card rounded-lg overflow-hidden">
+          <div className="card-header">
+            <h3 className="font-bold text-slate-100 flex items-center gap-2">
+              <History className="w-4 h-4" />
+              历史内战
+              <span className="badge text-[10px]">{matches.length}场</span>
+            </h3>
           </div>
-          {/* 红方 */}
-          <div className="glass-card p-5 text-center border-t-4 border-t-red-500">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-red-100 text-red-700 text-sm font-bold mb-4">
-              红方 ({red.length}人)
-            </div>
-            <div className="space-y-2">
-              {red.map((p) => (
-                <div
-                  key={p.id}
-                  className={`py-2 px-4 rounded-2xl font-bold ${
-                    p.is_temporary
-                      ? 'bg-amber-50 text-amber-700'
-                      : 'bg-red-50 text-red-900'
-                  }`}
-                >
-                  {p.summoner_nickname}
-                  {p.is_temporary && <span className="text-xs font-normal ml-1 opacity-60">(临时)</span>}
-                </div>
-              ))}
-            </div>
+          <div className="divide-y divide-[#1E1E28]">
+            {matches.map((m) => (
+              <MatchItem key={m.id} m={m} onDelete={() => {
+                deleteMatch(m.id).then(() => qc.invalidateQueries({ queryKey: ['matches'] }))
+              }} />
+            ))}
           </div>
         </div>
       )}
@@ -248,49 +226,34 @@ function MatchItem({ m, onDelete }: { m: MatchOut; onDelete: () => void }) {
 
   return (
     <details className="group">
-      <summary className="px-6 py-4 cursor-pointer hover:bg-black/[0.02] transition-colors list-none flex items-center justify-between">
-        <div>
-          <span className="font-medium">
-            {m.name || `内战 #${m.id}`}
-          </span>
-          <span className="text-gray-400 text-sm ml-3">
-            {new Date(m.created_at).toLocaleDateString('zh-CN')}{' '}
-            {new Date(m.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-          <span className="text-gray-400 text-sm ml-2">
-            ({m.participants.length}人参战)
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="text-sm">
-            <span className="text-blue-600 font-medium">
-              {blue.map((p) => p.summoner_nickname + (p.is_temporary ? '(临时)' : '')).join(', ')}
-            </span>
-            <span className="mx-2 text-gray-300">vs</span>
-            <span className="text-red-600 font-medium">
-              {red.map((p) => p.summoner_nickname + (p.is_temporary ? '(临时)' : '')).join(', ')}
-            </span>
+      <summary className="px-5 py-3.5 cursor-pointer hover:bg-white/[0.02] list-none flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <ChevronDown className="w-4 h-4 text-slate-600 shrink-0 transition-transform group-open:rotate-0 -rotate-90" />
+          <div className="min-w-0">
+            <span className="font-semibold text-slate-100 text-sm">{m.name || `内战 #${m.id}`}</span>
+            <span className="text-slate-600 text-xs ml-2">{new Date(m.created_at).toLocaleDateString('zh-CN')}</span>
+            <span className="text-slate-600 text-xs ml-1">· {m.participants.length}人</span>
           </div>
-          <button
-            className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-            onClick={(e) => { e.preventDefault(); if (confirm('确定删除？')) onDelete() }}
-          >
-            删除
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="hidden sm:flex items-center gap-2 text-xs">
+            <span className="text-blue-400 font-semibold">{blue.length}</span>
+            <span className="text-slate-600">vs</span>
+            <span className="text-red-400 font-semibold">{red.length}</span>
+          </div>
+          <button className="btn-ghost !p-1.5" onClick={(e) => { e.preventDefault(); if (confirm('确定删除？')) onDelete() }}>
+            <Trash2 className="w-4 h-4" />
           </button>
         </div>
       </summary>
-      <div className="px-6 pb-4 grid grid-cols-2 gap-4">
-        <div>
-          <p className="text-xs font-medium text-blue-500 mb-2">蓝方阵容</p>
-          {blue.map((p) => (
-            <p key={p.id} className="text-sm text-gray-600">- {p.summoner_nickname} ({p.summoner_name})</p>
-          ))}
+      <div className="px-5 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-blue-400 mb-1 flex items-center gap-1"><span className="w-1 h-3 rounded bg-blue-500" />蓝方</p>
+          {blue.map((p) => <p key={p.id} className="text-sm text-slate-400 pl-3">{p.summoner_nickname} <span className="text-slate-600 text-xs">({p.summoner_name})</span></p>)}
         </div>
-        <div>
-          <p className="text-xs font-medium text-red-500 mb-2">红方阵容</p>
-          {red.map((p) => (
-            <p key={p.id} className="text-sm text-gray-600">- {p.summoner_nickname} ({p.summoner_name})</p>
-          ))}
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-red-400 mb-1 flex items-center gap-1"><span className="w-1 h-3 rounded bg-red-500" />红方</p>
+          {red.map((p) => <p key={p.id} className="text-sm text-slate-400 pl-3">{p.summoner_nickname} <span className="text-slate-600 text-xs">({p.summoner_name})</span></p>)}
         </div>
       </div>
     </details>

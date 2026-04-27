@@ -96,3 +96,13 @@ pyinstaller LOL-Sync-Agent.spec
 2. **Sync data**: Agent on each machine reads LCU tokens → queries SGP API across all Tencent servers → pushes games with full participant data via `/api/sync/push`
 3. **Civil war filter**: Server rejects games with <6 participants or games where either team has zero tracked players
 4. **Deduplication**: `(riot_game_id, summoner_id)` unique constraint prevents duplicate GameRecords
+
+## AI Behavioral Guidelines (Karpathy Principles)
+
+1. **Think Before Coding** — Don't assume. Surface tradeoffs. State assumptions explicitly. Present multiple interpretations when ambiguous. Push back when simpler approaches exist.
+
+2. **Simplicity First** — Minimum code that solves the problem. Nothing speculative. No features beyond what was asked. No abstractions for single-use code. No "flexibility" that wasn't requested.
+
+3. **Surgical Changes** — Touch only what you must. Don't "improve" adjacent code. Don't refactor things that aren't broken. Match existing style.
+
+4. **Goal-Driven Execution** — Define success criteria, loop until verified. Turn imperative instructions into verifiable goals. When debugging, first write a test that reproduces the bug, then make it pass.
