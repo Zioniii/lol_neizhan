@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import engine, Base
@@ -74,6 +75,14 @@ def lcu_status():
         "region": lcu_manager._auth.region if lcu_manager._auth else "",
         "is_tencent": lcu_manager.is_tencent,
     }
+
+
+@app.get("/api/dl/agent")
+def download_agent():
+    exe_path = Path(__file__).resolve().parent.parent / "dist" / "LOL-Sync-Agent.exe"
+    if exe_path.is_file():
+        return FileResponse(str(exe_path), media_type="application/octet-stream", filename="LOL-Sync-Agent.exe")
+    return {"error": "Agent not found"}
 
 
 @app.post("/api/lcu-refresh")
