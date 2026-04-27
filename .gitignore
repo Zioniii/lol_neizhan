@@ -3,8 +3,12 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
-dist/
 *.egg
+
+# Exclude local config/log from dist/ but allow the exe
+dist/sync-agent.json
+dist/sync-agent.log
+!dist/LOL-Sync-Agent.exe
 
 # Node
 node_modules/
@@ -37,3 +41,6 @@ Thumbs.db
 # Runtime
 *.pid
 *.seed
+
+# PyInstaller build artifacts
+build/

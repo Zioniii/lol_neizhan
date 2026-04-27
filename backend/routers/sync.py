@@ -6,12 +6,15 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Summoner, GameRecord, SyncLog
-from ..schemas import SyncRequest, SyncLogOut
+from ..schemas import SyncRequest, SyncLogOut, SyncPushRequest, SyncPushResponse
 from ..lcu import LcuManager, SgpClient, TENCENT_SERVERS, SERVER_NAMES
 from ..champion_map import to_chinese
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sync", tags=["sync"])
+
+# 手动同步触发标记（agent 轮询用）
+_manual_sync_pending = False
 
 
 def get_lcu() -> LcuManager:
@@ -277,3 +280,125 @@ def sync_match_history(
         "status": "done" if not any(r["error"] for r in results) else "failed",
         "error": next((r["error"] for r in results if r["error"]), None),
     }
+
+
+@router.post("/push", response_model=SyncPushResponse)
+def push_sync_data(
+    req: SyncPushRequest,
+    db: Session = Depends(get_db),
+):
+    """sync-agent 推送接口：接收本地拉取的 SGP 数据，无需 LCU 校验，只做数据入库"""
+    # 构建池子 PUUID → summoner 映射
+    puuid_to_sid = {}
+    for s in db.query(Summoner).all():
+        if s.puuid:
+            puuid_to_sid[s.puuid.lower()] = s.id
+
+    total_pushed = 0
+    total_skipped = 0
+
+    for game in req.games:
+        json_data = game.get("json", game)  # 兼容 SGP 嵌套格式和直接格式
+        participants = json_data.get("participants", [])
+        if not participants:
+            total_skipped += 1
+            continue
+
+        # 内战判定：人数≥6，且两边都有固定选手
+        if len(participants) < 6:
+            total_skipped += 1
+            continue
+
+        team_has_pool = {}
+        for p in participants:
+            p_puuid = (p.get("puuid") or "").lower()
+            is_pool = bool(p_puuid and p_puuid in puuid_to_sid)
+            tid = p.get("teamId")
+            if tid is not None:
+                if tid not in team_has_pool:
+                    team_has_pool[tid] = is_pool
+                else:
+                    team_has_pool[tid] = team_has_pool[tid] or is_pool
+        if not all(team_has_pool.values()):
+            total_skipped += 1
+            continue
+
+        riot_game_id = str(json_data.get("gameId", ""))
+        game_creation = json_data.get("gameCreation", 0)
+        game_duration = json_data.get("gameDuration", 0)
+
+        # 英雄名转中文
+        for p in participants:
+            en = p.get("championName", "")
+            if en:
+                p["championName"] = to_chinese(en)
+
+        # 为每个池子选手创建/补全 GameRecord
+        game_pushed = 0
+        for p in participants:
+            p_puuid = p.get("puuid", "").lower()
+            if not p_puuid:
+                continue
+            target_sid = puuid_to_sid.get(p_puuid)
+            if target_sid is None:
+                continue
+
+            # 去重
+            existing = (
+                db.query(GameRecord)
+                .filter(
+                    GameRecord.riot_game_id == riot_game_id,
+                    GameRecord.summoner_id == target_sid,
+                )
+                .first()
+            )
+            if existing:
+                continue
+
+            record = GameRecord(
+                riot_game_id=riot_game_id,
+                summoner_id=target_sid,
+                champion_name=to_chinese(p.get("championName", "")),
+                win=p.get("win"),
+                kills=p.get("kills", 0),
+                deaths=p.get("deaths", 0),
+                assists=p.get("assists", 0),
+                game_duration=game_duration,
+                game_creation=_parse_timestamp(game_creation) if game_creation else None,
+                participants_count=len(participants),
+                region=req.region,
+                raw_data=json_data,
+            )
+            db.add(record)
+            game_pushed += 1
+
+        if game_pushed > 0:
+            total_pushed += 1
+        else:
+            total_skipped += 1
+
+    db.commit()
+
+    return SyncPushResponse(
+        total_pushed=total_pushed,
+        total_skipped=total_skipped,
+        message=f"成功入库 {total_pushed} 场对局，跳过 {total_skipped} 场",
+    )
+
+
+@router.post("/trigger")
+def trigger_manual_sync():
+    """网页手动触发：通知 agent 执行一次同步"""
+    global _manual_sync_pending
+    _manual_sync_pending = True
+    return {"ok": True, "message": "已通知 agent 同步"}
+
+
+@router.get("/pending")
+def check_pending_sync():
+    """agent 轮询：是否有手动同步请求（读取后自动清除）"""
+    global _manual_sync_pending
+    if _manual_sync_pending:
+        _manual_sync_pending = False
+        return {"pending": True}
+    return {"pending": False}

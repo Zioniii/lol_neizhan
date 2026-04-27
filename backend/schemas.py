@@ -109,6 +109,19 @@ class HeadToHead(BaseModel):
     win_rate: float
 
 
+class SyncPushRequest(BaseModel):
+    """sync-agent 推送对局数据的请求体"""
+    server_id: str = Field(..., description="SGP 区服ID, 如 TENCENT_HN1")
+    region: str = Field(..., description="区服中文名, 如 艾欧尼亚")
+    games: list[dict] = Field(..., description="原始对局数据列表 (SGP 返回的 games 数组)")
+
+
+class SyncPushResponse(BaseModel):
+    total_pushed: int = 0
+    total_skipped: int = 0
+    message: str = ""
+
+
 # ── LCU Status ──
 
 class LcuStatus(BaseModel):

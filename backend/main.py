@@ -1,8 +1,10 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .database import engine, Base
 from .lcu import LcuManager
@@ -51,13 +53,19 @@ app.include_router(stats.router)
 
 @app.get("/api/lcu-status")
 def lcu_status():
+    # 每次请求重新检测 LCU，避免使用启动时的缓存状态
+    lcu_manager.refresh()
     if not lcu_manager.connected:
         return {"connected": False, "is_tencent": False}
     summoner_name = None
     try:
         data = lcu_manager.get_current_summoner()
         if data:
-            summoner_name = f"{data.get('gameName', '')}#{data.get('tagLine', '')}"
+            # 全球服: gameName#tagLine, 国服: displayName
+            game_name = data.get("gameName") or data.get("displayName") or ""
+            tag_line = data.get("tagLine") or data.get("internalTag") or ""
+            if game_name:
+                summoner_name = f"{game_name}#{tag_line}" if tag_line else game_name
     except Exception:
         pass
     return {
@@ -74,6 +82,12 @@ def lcu_refresh():
     if ok:
         return {"connected": True, "message": "LCU 已连接"}
     return {"connected": False, "message": "未检测到 LCU，请确认 LOL 客户端已启动"}
+
+
+# 前端静态文件托管（构建后）— 放在路由最后，避免拦截 API 请求
+_frontend_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _frontend_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
 
 
 if __name__ == "__main__":

@@ -112,12 +112,27 @@ class LcuManager:
         return None
 
     def get_current_summoner(self) -> dict | None:
-        """获取当前登录的召唤师信息"""
-        if not self._lcu_http:
-            return None
-        try:
-            r = self._lcu_http.get("/lol-summoner/v1/current-summoner")
-            r.raise_for_status()
-            return r.json()
-        except Exception:
-            return None
+        """
+        获取当前登录的召唤师信息。
+        全球服: LCU API /lol-summoner/v1/current-summoner
+        国服:   Riot Client API /player-account/v1/current-account (fallback)
+        """
+        # 优先 LCU API
+        if self._lcu_http:
+            try:
+                r = self._lcu_http.get("/lol-summoner/v1/current-summoner")
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                pass
+
+        # 国服 fallback: Riot Client API
+        if self._riot_http:
+            try:
+                r = self._riot_http.get("/player-account/v1/current-account")
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                pass
+
+        return None

@@ -190,6 +190,27 @@ export function getMatchHistory(page: number = 1) {
   )
 }
 
+// ── sync logs ──
+
+export interface SyncLogEntry {
+  id: number
+  summoner_id: number
+  summoner_nickname: string
+  sync_start: string
+  sync_end: string | null
+  games_fetched: number
+  status: string
+  error_message: string | null
+}
+
+export function getSyncLogs() {
+  return request<SyncLogEntry[]>('/sync/logs')
+}
+
+export function triggerSync() {
+  return request<{ ok: boolean }>('/sync/trigger', { method: 'POST' })
+}
+
 // ── lcu ──
 
 export function getLcuStatus() {
