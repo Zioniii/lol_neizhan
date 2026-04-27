@@ -41,6 +41,8 @@ class MatchCreate(BaseModel):
     name: Optional[str] = None
     summoner_ids: list[int] = Field(default=[], min_length=0, description="参战固定选手ID列表")
     temp_players: list[str] = Field(default=[], description="临时玩家昵称列表，只参与分组")
+    side_limit: int = Field(default=2, ge=0, description="每人连续同一边上限, 0=不限制")
+    win_rate_balance: bool = Field(default=False, description="是否根据胜率平衡分组")
 
 
 class MatchParticipantOut(BaseModel):

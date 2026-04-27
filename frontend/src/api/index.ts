@@ -70,10 +70,16 @@ export function listMatches() {
   return request<MatchOut[]>('/matches')
 }
 
-export function createMatch(summoner_ids: number[], temp_players: string[] = [], name?: string) {
+export function createMatch(
+  summoner_ids: number[],
+  temp_players: string[] = [],
+  name?: string,
+  side_limit: number = 2,
+  win_rate_balance: boolean = false,
+) {
   return request<MatchOut>('/matches', {
     method: 'POST',
-    body: JSON.stringify({ summoner_ids, temp_players, name }),
+    body: JSON.stringify({ summoner_ids, temp_players, name, side_limit, win_rate_balance }),
   })
 }
 

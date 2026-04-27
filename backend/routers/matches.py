@@ -1,12 +1,15 @@
 import random
+import logging
 from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 
 from ..database import get_db
 from ..models import Summoner, Match, MatchParticipant, GameRecord
 from ..schemas import MatchCreate, MatchOut, MatchParticipantOut
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/matches", tags=["matches"])
 
@@ -171,16 +174,56 @@ def get_match(match_id: int, db: Session = Depends(get_db)):
     )
 
 
+def _get_forced_team(db: Session, summoner_id: int, side_limit: int) -> int | None:
+    """检查选手最近 side_limit 场比赛是否都在同一队，若是则强制换边"""
+    recent = (
+        db.query(MatchParticipant.team)
+        .join(Match, MatchParticipant.match_id == Match.id)
+        .filter(MatchParticipant.summoner_id == summoner_id)
+        .order_by(Match.created_at.desc())
+        .limit(side_limit)
+        .all()
+    )
+    if len(recent) < side_limit:
+        return None
+    teams = [r[0] for r in recent]
+    if all(t == 0 for t in teams):
+        return 1  # 强制到红方
+    if all(t == 1 for t in teams):
+        return 0  # 强制到蓝方
+    return None
+
+
+def _get_win_rates(db: Session, summoner_ids: list[int]) -> dict[int, float]:
+    """批量查询选手胜率，无数据的默认 0.5"""
+    rows = (
+        db.query(
+            GameRecord.summoner_id,
+            func.count().label("total"),
+            func.sum(case((GameRecord.win == True, 1), else_=0)).label("wins"),
+        )
+        .filter(GameRecord.summoner_id.in_(summoner_ids))
+        .group_by(GameRecord.summoner_id)
+        .all()
+    )
+    wr_map: dict[int, float] = {}
+    for r in rows:
+        total = r.total
+        wins = r.wins or 0
+        wr_map[r.summoner_id] = wins / total if total > 0 else 0.5
+    for sid in summoner_ids:
+        wr_map.setdefault(sid, 0.5)
+    return wr_map
+
+
 @router.post("", response_model=MatchOut)
 def create_match(data: MatchCreate, db: Session = Depends(get_db)):
     total = len(data.summoner_ids) + len(data.temp_players)
     if total < 2:
         raise HTTPException(400, "至少需要2名参战选手")
 
-    # 收集所有参战召唤师 ID
-    all_ids = list(data.summoner_ids)
-
     # 处理临时玩家：按昵称查找或创建
+    temp_ids: list[int] = []
     for name in data.temp_players:
         name = name.strip()
         if not name:
@@ -191,7 +234,7 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
             .first()
         )
         if existing:
-            all_ids.append(existing.id)
+            temp_ids.append(existing.id)
         else:
             temp = Summoner(
                 game_name=name,
@@ -202,18 +245,56 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
             )
             db.add(temp)
             db.flush()
-            all_ids.append(temp.id)
+            temp_ids.append(temp.id)
 
     # 验证固定选手 ID 存在
     summoners = db.query(Summoner).filter(Summoner.id.in_(data.summoner_ids)).all()
     if len(summoners) != len(set(data.summoner_ids)):
         raise HTTPException(400, "存在无效的召唤师 ID")
 
-    # 随机打乱后分成两队
-    random.shuffle(all_ids)
-    mid = (len(all_ids) + 1) // 2
-    blue = all_ids[:mid]
-    red = all_ids[mid:]
+    # ── 3-phase team assignment ──
+    fixed_ids = list(data.summoner_ids)
+    blue: list[int] = []
+    red: list[int] = []
+
+    # Phase 1: Side-limit pinning
+    if data.side_limit > 0:
+        for sid in fixed_ids:
+            forced = _get_forced_team(db, sid, data.side_limit)
+            if forced is not None:
+                if forced == 0:
+                    blue.append(sid)
+                else:
+                    red.append(sid)
+
+    # Phase 2: Win-rate balance (only for unpinned fixed players)
+    remaining_fixed = [sid for sid in fixed_ids if sid not in blue and sid not in red]
+    if data.win_rate_balance and remaining_fixed:
+        wrs = _get_win_rates(db, fixed_ids)
+        remaining_fixed.sort(key=lambda sid: wrs.get(sid, 0.5), reverse=True)
+        for sid in remaining_fixed:
+            if len(blue) < len(red):
+                blue.append(sid)
+            elif len(red) < len(blue):
+                red.append(sid)
+            else:
+                blue_total = sum(wrs.get(s, 0.5) for s in blue)
+                red_total = sum(wrs.get(s, 0.5) for s in red)
+                if blue_total <= red_total:
+                    blue.append(sid)
+                else:
+                    red.append(sid)
+    else:
+        remaining_fixed = []  # consumed below
+
+    # Phase 3: Random fill for remaining fixed + all temp players
+    random_fill = remaining_fixed + temp_ids
+    random.shuffle(random_fill)
+    for sid in random_fill:
+        if len(blue) <= len(red):
+            blue.append(sid)
+        else:
+            red.append(sid)
 
     match = Match(name=data.name)
     db.add(match)
