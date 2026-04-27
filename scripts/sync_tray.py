@@ -10,6 +10,7 @@ import logging
 import subprocess
 import threading
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import pystray
@@ -26,17 +27,19 @@ else:
 
 sys.path.insert(0, BASE_DIR)
 
-# ── 日志文件 ──
+# ── 日志文件（带轮转，单文件最大 1MB，保留 3 个备份）──
 LOG_FILE = os.path.join(APP_DIR, 'sync-agent.log')
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [sync-tray] %(levelname)s %(message)s",
     handlers=[
-        logging.FileHandler(LOG_FILE, encoding='utf-8'),
+        RotatingFileHandler(LOG_FILE, maxBytes=1024*1024, backupCount=3, encoding='utf-8'),
         logging.StreamHandler(sys.stdout),
     ],
 )
 logger = logging.getLogger("sync-tray")
+# 抑制 httpx 请求日志，避免每个 HTTP 请求都写一行
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ── 配置 ──
 CONFIG_FILE = os.path.join(APP_DIR, 'sync-agent.json')

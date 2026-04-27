@@ -37,6 +37,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sync-agent")
 
+# 抑制 httpx 请求日志
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 PUSH_TIMEOUT = 60.0
 SGP_PAGE_SIZE = 200
 SGP_MAX_PAGES = 5
