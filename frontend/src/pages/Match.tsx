@@ -12,7 +12,7 @@ import {
   type SummonerOut,
 } from '../api'
 import {
-  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, RefreshCw, Settings, Send,
+  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, Settings, Send,
 } from 'lucide-react'
 
 export default function MatchPage() {
@@ -266,15 +266,10 @@ export default function MatchPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2">
-                <button className="btn-secondary flex-1 text-sm" onClick={() => setResult(null)}>
-                  <RefreshCw className="w-4 h-4" />重新分组
-                </button>
-                <button className="btn-primary flex-1 text-sm" disabled={sendChatMut.isPending}
-                  onClick={() => result && sendChatMut.mutate(result.id)}>
-                  <Send className="w-4 h-4" />发送到房间
-                </button>
-              </div>
+              <button className="btn-primary w-full text-sm" disabled={sendChatMut.isPending}
+                onClick={() => result && sendChatMut.mutate(result.id)}>
+                <Send className="w-4 h-4" />发送到房间
+              </button>
             </motion.div>
           ) : (
             <div className="card rounded-xl h-full flex items-center justify-center p-8 min-h-[300px]">
