@@ -9,17 +9,24 @@ import {
   getSummonerStats,
   sendPendingChat,
   type MatchOut,
+  type MatchListOut,
   type SummonerOut,
 } from '../api'
 import {
-  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, Settings, Send,
+  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, Settings, Send, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 export default function MatchPage() {
   const qc = useQueryClient()
+  const [historyPage, setHistoryPage] = useState(1)
+  const historyPageSize = 10
+
   const { data: summoners } = useQuery({ queryKey: ['summoners'], queryFn: listSummoners })
-  const { data: matches } = useQuery({ queryKey: ['matches'], queryFn: listMatches })
+  const { data: matchesData } = useQuery({ queryKey: ['matches', historyPage], queryFn: () => listMatches(historyPage, historyPageSize) })
   const { data: statsData } = useQuery({ queryKey: ['summoner-stats'], queryFn: getSummonerStats, staleTime: 30_000 })
+  const matches = matchesData?.items
+  const matchesTotal = matchesData?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(matchesTotal / historyPageSize))
   const active = summoners?.filter((s) => s.is_active) ?? []
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -39,6 +46,7 @@ export default function MatchPage() {
       setResult(data)
       setSpinning(false)
       qc.invalidateQueries({ queryKey: ['matches'] })
+      setHistoryPage(1)
     },
     onSettled: () => setSpinning(false),
   })
@@ -289,8 +297,27 @@ export default function MatchPage() {
             <h3 className="font-semibold text-text-primary flex items-center gap-2 text-sm">
               <History className="w-4 h-4" />
               历史内战
-              <span className="badge">{matches.length}场</span>
+              <span className="badge">{matchesTotal}场</span>
             </h3>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  className="btn-ghost !p-1 disabled:opacity-30"
+                  disabled={historyPage <= 1}
+                  onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-text-muted font-mono">{historyPage}/{totalPages}</span>
+                <button
+                  className="btn-ghost !p-1 disabled:opacity-30"
+                  disabled={historyPage >= totalPages}
+                  onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
           <div className="divide-y divide-border-default">
             {matches.map((m) => (
@@ -310,10 +337,9 @@ function MatchItem({ m, onDelete }: { m: MatchOut; onDelete: () => void }) {
   const red = m.participants.filter((p) => p.team === 1)
 
   return (
-    <details className="group">
-      <summary className="px-5 py-3.5 cursor-pointer hover:bg-bg-secondary list-none flex items-center justify-between transition-colors">
+    <div className="px-5 py-3.5 hover:bg-bg-secondary transition-colors">
+      <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-3 min-w-0">
-          <ChevronDown className="w-4 h-4 text-text-muted shrink-0 transition-transform group-open:rotate-0 -rotate-90" />
           <div className="min-w-0">
             <span className="font-semibold text-text-primary text-sm">{m.name || `内战 #${m.id}`}</span>
             <span className="text-text-muted text-xs ml-2">{new Date(m.created_at).toLocaleDateString('zh-CN')}</span>
@@ -321,17 +347,17 @@ function MatchItem({ m, onDelete }: { m: MatchOut; onDelete: () => void }) {
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <div className="hidden sm:flex items-center gap-2 text-xs">
+          <div className="flex items-center gap-2 text-xs">
             <span className="text-text-secondary font-semibold">{blue.length}</span>
             <span className="text-text-muted">vs</span>
             <span className="text-text-secondary font-semibold">{red.length}</span>
           </div>
-          <button className="btn-ghost !p-1.5" onClick={(e) => { e.preventDefault(); if (confirm('确定删除？')) onDelete() }}>
+          <button className="btn-ghost !p-1.5" onClick={(e) => { e.stopPropagation(); if (confirm('确定删除？')) onDelete() }}>
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
-      </summary>
-      <div className="px-5 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-1">
           <p className="text-xs font-semibold text-text-primary mb-1 flex items-center gap-1"><span className="w-1 h-3 rounded bg-text-primary" />蓝方</p>
           {blue.map((p) => <p key={p.id} className="text-sm text-text-secondary pl-3">{p.summoner_nickname} <span className="text-text-muted text-xs">({p.summoner_name})</span></p>)}
@@ -341,6 +367,6 @@ function MatchItem({ m, onDelete }: { m: MatchOut; onDelete: () => void }) {
           {red.map((p) => <p key={p.id} className="text-sm text-text-secondary pl-3">{p.summoner_nickname} <span className="text-text-muted text-xs">({p.summoner_name})</span></p>)}
         </div>
       </div>
-    </details>
+    </div>
   )
 }

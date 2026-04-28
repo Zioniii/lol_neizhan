@@ -86,11 +86,14 @@ pyinstaller LOL-Sync-Agent.spec
 
 - **IP**: `122.51.14.250` (Tencent Cloud, OpenCloudOS)
 - **SSH**: `root@122.51.14.250` (key-based auth, no password needed)
-- **Deploy path**: `/www/wwwroot/civilwar.top`
+- **Deploy path**: `/opt/lol_neizhan` (backend + frontend + database)
+- **Legacy deploy**: `/www/wwwroot/civilwar.top` (old monolithic server on port 8082, still running but deprecated)
 - **Service**: `lol-neizhan.service` (systemd, enabled for auto-start on boot)
-- **Backend**: Python FastAPI on port 8766, managed via systemd
-- **Frontend**: Built to `frontend/dist/`, served by FastAPI static mount
-- **Database**: `/www/wwwroot/civilwar.top/lol_neizhan.db` (SQLite)
+  - Working directory: `/opt/lol_neizhan`
+  - Exec: `python3 -m backend.main`
+  - Port: 8766
+- **Database**: `/opt/lol_neizhan/lol_neizhan.db` (SQLite, ~73MB)
+  - Server also has legacy DBs at `/www/wwwroot/civilwar.top/civilwar.db` (old schema) and empty stub files
 - **Service management**:
   ```bash
   systemctl restart lol-neizhan.service   # restart backend
@@ -98,7 +101,10 @@ pyinstaller LOL-Sync-Agent.spec
   systemctl stop lol-neizhan.service      # stop
   journalctl -u lol-neizhan.service -n 50 # view recent logs
   ```
-- **Deploy**: Build frontend locally (`npm run build`), SCP project files to server, `systemctl restart lol-neizhan.service`
+- **Deploy**: SCP changed files to `/opt/lol_neizhan/`, then `systemctl restart lol-neizhan.service`
+  - Frontend: `npm run build` → SCP `frontend/dist/` → `/opt/lol_neizhan/dist/`
+  - Backend: SCP changed `.py` files → `/opt/lol_neizhan/backend/...`
+  - No need to restart for static file changes, only for backend changes
 - **API base URL**: `http://122.51.14.250:8766/api`
 - **Notes**: Port 8766 is not publicly exposed — access API via localhost on the server, or via nginx reverse proxy on civilwar.top
 

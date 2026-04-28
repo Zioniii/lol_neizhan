@@ -14,10 +14,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/matches", tags=["matches"])
 
 
-@router.get("", response_model=list[MatchOut])
-def list_matches(db: Session = Depends(get_db)):
-    matches = db.query(Match).order_by(Match.created_at.desc()).all()
-    result = []
+@router.get("")
+def list_matches(page: int = 1, page_size: int = 20, db: Session = Depends(get_db)):
+    total = db.query(Match).count()
+    matches = (
+        db.query(Match)
+        .order_by(Match.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    items = []
     for m in matches:
         participants = []
         for mp in m.participants:
@@ -31,7 +38,7 @@ def list_matches(db: Session = Depends(get_db)):
                     is_temporary=mp.summoner.is_temporary,
                 )
             )
-        result.append(
+        items.append(
             MatchOut(
                 id=m.id,
                 name=m.name,
@@ -39,6 +46,7 @@ def list_matches(db: Session = Depends(get_db)):
                 participants=participants,
             )
         )
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
     return result
 
 
@@ -257,15 +265,21 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
     blue: list[int] = []
     red: list[int] = []
 
-    # Phase 1: Side-limit pinning
+    # Phase 1: Side-limit pinning (capped to prevent imbalance)
+    max_per_team = (total + 1) // 2  # ceil(total/2), e.g. 6→3, 7→4
     if data.side_limit > 0:
+        # Sort by consecutive same-side streak (longest first = most urgent)
+        pinned: list[tuple[int, int]] = []  # (summoner_id, forced_team)
         for sid in fixed_ids:
             forced = _get_forced_team(db, sid, data.side_limit)
             if forced is not None:
-                if forced == 0:
-                    blue.append(sid)
-                else:
-                    red.append(sid)
+                pinned.append((sid, forced))
+        # Assign only up to max_per_team per side; excess stays for later phases
+        for sid, forced in pinned:
+            if forced == 0 and len(blue) < max_per_team:
+                blue.append(sid)
+            elif forced == 1 and len(red) < max_per_team:
+                red.append(sid)
 
     # Phase 2: Win-rate balance (only for unpinned fixed players)
     remaining_fixed = [sid for sid in fixed_ids if sid not in blue and sid not in red]

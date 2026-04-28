@@ -66,8 +66,15 @@ export interface MatchOut {
   participants: MatchParticipantOut[]
 }
 
-export function listMatches() {
-  return request<MatchOut[]>('/matches')
+export interface MatchListOut {
+  items: MatchOut[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export function listMatches(page: number = 1, pageSize: number = 10) {
+  return request<MatchListOut>(`/matches?page=${page}&page_size=${pageSize}`)
 }
 
 export function createMatch(
