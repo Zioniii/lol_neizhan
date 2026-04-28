@@ -405,12 +405,19 @@ def trigger_manual_sync():
 
 @router.get("/pending")
 def check_pending_sync():
-    """agent 轮询：是否有手动同步请求或待发送的房间消息（读取后自动清除）"""
-    global _manual_sync_pending, _pending_chat_message
+    """agent 轮询：是否有手动同步请求（读取后自动清除）"""
+    global _manual_sync_pending
     pending = _manual_sync_pending
     if pending:
         _manual_sync_pending = False
-    chat_msg = _pending_chat_message
-    if chat_msg:
+    return {"pending": pending, "chat_message": _pending_chat_message}
+
+
+@router.get("/pending-chat")
+def check_pending_chat():
+    """agent 轮询：是否有待发送的房间消息（读取后自动清除）"""
+    global _pending_chat_message
+    msg = _pending_chat_message
+    if msg:
         _pending_chat_message = None
-    return {"pending": pending, "chat_message": chat_msg}
+    return {"chat_message": msg}

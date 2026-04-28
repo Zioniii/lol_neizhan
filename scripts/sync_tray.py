@@ -134,7 +134,7 @@ class SyncWorker:
 
                 # 轮询待办消息（自定义房间聊天等）
                 try:
-                    r = httpx.get(f"{self.server_url}/api/sync/pending", timeout=5)
+                    r = httpx.get(f"{self.server_url}/api/sync/pending-chat", timeout=5)
                     pd = r.json()
                     chat_msg = pd.get("chat_message")
                     if chat_msg:

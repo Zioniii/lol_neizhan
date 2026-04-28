@@ -257,7 +257,7 @@ def do_watch(args):
 
         # 轮询服务器待办（自定义房间消息等）
         try:
-            resp = httpx.get(f"{server_url}/api/sync/pending", timeout=5)
+            resp = httpx.get(f"{server_url}/api/sync/pending-chat", timeout=5)
             pd = resp.json()
             chat_msg = pd.get("chat_message")
             if chat_msg:
