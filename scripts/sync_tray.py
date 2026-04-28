@@ -84,6 +84,7 @@ class SyncWorker:
         self.sync_interval_minutes = sync_interval_minutes
         self.running = False
         self._thread: threading.Thread | None = None
+        self._chat_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
         # 状态（供 UI 读取）
@@ -100,6 +101,8 @@ class SyncWorker:
         self._stop_event.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
+        self._chat_thread = threading.Thread(target=self._chat_poll_loop, daemon=True)
+        self._chat_thread.start()
         self.status_text = "运行中"
 
     def stop(self):
@@ -132,18 +135,7 @@ class SyncWorker:
                 except Exception:
                     self.summoner_name = None
 
-                # 轮询待办消息（自定义房间聊天等）
-                try:
-                    r = httpx.get(f"{self.server_url}/api/sync/pending-chat", timeout=5)
-                    pd = r.json()
-                    chat_msg = pd.get("chat_message")
-                    if chat_msg:
-                        logger.info("收到待发送的房间消息")
-                        lcu.send_custom_game_chat(chat_msg)
-                except Exception as e:
-                    logger.warning(f"轮询待办失败: {e}")
-
-                # 判定是否需要同步
+                # 判定是否需要同步（房间消息轮询已移至独立线程 _chat_poll_loop）
                 current_key = self._session_key(lcu)
                 now = time.time()
                 need_sync = False
@@ -194,6 +186,26 @@ class SyncWorker:
             return None
         a = lcu._auth
         return f"{a.pid}:{a.port}:{a.riot_client_port}"
+
+    def _chat_poll_loop(self):
+        """独立线程：轮询待发送的房间消息，不阻塞同步流程"""
+        while not self._stop_event.is_set():
+            try:
+                # 每次轮询独立检测 LCU
+                lcu = LcuManager()
+                if not lcu.refresh():
+                    self._stop_event.wait(2)
+                    continue
+
+                r = httpx.get(f"{self.server_url}/api/sync/pending-chat", timeout=5)
+                pd = r.json()
+                chat_msg = pd.get("chat_message")
+                if chat_msg:
+                    logger.info("收到待发送的房间消息")
+                    lcu.send_custom_game_chat(chat_msg)
+            except Exception as e:
+                logger.debug(f"轮询房间消息失败: {e}")
+            self._stop_event.wait(2)
 
     def _do_sync(self, lcu: LcuManager):
         try:

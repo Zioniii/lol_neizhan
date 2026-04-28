@@ -22,6 +22,7 @@ import argparse
 import logging
 import os
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 
@@ -234,6 +235,25 @@ def _make_session_key(lcu: LcuManager) -> str | None:
     return f"{a.pid}:{a.port}:{a.riot_client_port}"
 
 
+def _chat_poll_loop(server_url: str, stop: threading.Event):
+    """独立线程：轮询待发送的房间消息"""
+    while not stop.is_set():
+        try:
+            lcu = LcuManager()
+            if not lcu.refresh():
+                stop.wait(2)
+                continue
+            resp = httpx.get(f"{server_url}/api/sync/pending-chat", timeout=5)
+            pd = resp.json()
+            chat_msg = pd.get("chat_message")
+            if chat_msg:
+                logger.info("收到待发送的房间消息")
+                lcu.send_custom_game_chat(chat_msg)
+        except Exception:
+            pass
+        stop.wait(2)
+
+
 def do_watch(args):
     """监听模式：常驻后台，检测 LCU 会话变化后自动同步"""
     server_url = args.server.rstrip("/")
@@ -242,6 +262,13 @@ def do_watch(args):
 
     last_key = None
     warned_no_lcu = False
+
+    # 启动独立线程轮询房间消息
+    stop_event = threading.Event()
+    chat_thread = threading.Thread(
+        target=_chat_poll_loop, args=(server_url, stop_event), daemon=True
+    )
+    chat_thread.start()
 
     while True:
         lcu = LcuManager()
@@ -254,17 +281,6 @@ def do_watch(args):
             continue
 
         warned_no_lcu = False
-
-        # 轮询服务器待办（自定义房间消息等）
-        try:
-            resp = httpx.get(f"{server_url}/api/sync/pending-chat", timeout=5)
-            pd = resp.json()
-            chat_msg = pd.get("chat_message")
-            if chat_msg:
-                logger.info("收到待发送的房间消息")
-                lcu.send_custom_game_chat(chat_msg)
-        except Exception as e:
-            logger.warning(f"轮询待办失败: {e}")
 
         current_key = _make_session_key(lcu)
 

@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 # 全局 LCU 管理器
 lcu_manager = LcuManager()
+
+# LCU 状态缓存：离线时 10 秒内不重复扫描进程
+_lcu_cache_ts: float = 0
+_lcu_cache_connected: bool = False
+_LCU_CACHE_TTL = 10.0
 
 
 @asynccontextmanager
@@ -54,15 +60,21 @@ app.include_router(stats.router)
 
 @app.get("/api/lcu-status")
 def lcu_status():
-    # 每次请求重新检测 LCU，避免使用启动时的缓存状态
+    global _lcu_cache_ts, _lcu_cache_connected
+    now = time.time()
+    # 如果上次确认离线且还在缓存期内，直接返回离线
+    if not _lcu_cache_connected and now - _lcu_cache_ts < _LCU_CACHE_TTL:
+        return {"connected": False, "is_tencent": False}
+    # 缓存过期才重新检测
     lcu_manager.refresh()
+    _lcu_cache_ts = now
+    _lcu_cache_connected = lcu_manager.connected
     if not lcu_manager.connected:
         return {"connected": False, "is_tencent": False}
     summoner_name = None
     try:
         data = lcu_manager.get_current_summoner()
         if data:
-            # 全球服: gameName#tagLine, 国服: displayName
             game_name = data.get("gameName") or data.get("displayName") or ""
             tag_line = data.get("tagLine") or data.get("internalTag") or ""
             if game_name:

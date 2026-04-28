@@ -23,6 +23,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     queryKey: ['lcu-status'],
     queryFn: getLcuStatus,
     refetchInterval: 30_000,
+    staleTime: 15_000,
   })
 
   // Close mobile menu on route change
