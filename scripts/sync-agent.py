@@ -254,6 +254,18 @@ def do_watch(args):
             continue
 
         warned_no_lcu = False
+
+        # 轮询服务器待办（自定义房间消息等）
+        try:
+            resp = httpx.get(f"{server_url}/api/sync/pending", timeout=5)
+            pd = resp.json()
+            chat_msg = pd.get("chat_message")
+            if chat_msg:
+                logger.info("收到待发送的房间消息")
+                lcu.send_custom_game_chat(chat_msg)
+        except Exception as e:
+            logger.warning(f"轮询待办失败: {e}")
+
         current_key = _make_session_key(lcu)
 
         if current_key == last_key:

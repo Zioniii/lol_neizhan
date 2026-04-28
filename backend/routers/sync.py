@@ -16,6 +16,15 @@ router = APIRouter(prefix="/api/sync", tags=["sync"])
 # 手动同步触发标记（agent 轮询用）
 _manual_sync_pending = False
 
+# 待发送的自定义房间消息（agent 负责实际发送，因为 agent 有 LCU 访问权限）
+_pending_chat_message: str | None = None
+
+
+def set_pending_chat_message(msg: str) -> None:
+    """设置待发送的自定义房间消息，由 agent 轮询取走"""
+    global _pending_chat_message
+    _pending_chat_message = msg
+
 
 def get_lcu() -> LcuManager:
     from ..main import lcu_manager
@@ -396,9 +405,12 @@ def trigger_manual_sync():
 
 @router.get("/pending")
 def check_pending_sync():
-    """agent 轮询：是否有手动同步请求（读取后自动清除）"""
-    global _manual_sync_pending
-    if _manual_sync_pending:
+    """agent 轮询：是否有手动同步请求或待发送的房间消息（读取后自动清除）"""
+    global _manual_sync_pending, _pending_chat_message
+    pending = _manual_sync_pending
+    if pending:
         _manual_sync_pending = False
-        return {"pending": True}
-    return {"pending": False}
+    chat_msg = _pending_chat_message
+    if chat_msg:
+        _pending_chat_message = None
+    return {"pending": pending, "chat_message": chat_msg}

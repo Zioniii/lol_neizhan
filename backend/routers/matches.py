@@ -327,9 +327,9 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
             )
         )
 
-    # 尝试将分组结果发送到自定义房间
+    # 将分组结果写入待发送队列，由本地 agent 发到自定义房间
     try:
-        from ..main import lcu_manager
+        from .sync import set_pending_chat_message
 
         blue_names = [
             p.summoner_nickname + (" (临时)" if p.is_temporary else "")
@@ -347,7 +347,7 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
             f"蓝方 ({len(blue_names)}人): {', '.join(blue_names)}\n"
             f"红方 ({len(red_names)}人): {', '.join(red_names)}"
         )
-        lcu_manager.send_custom_game_chat(msg)
+        set_pending_chat_message(msg)
     except Exception:
         pass  # 不阻塞分组结果
 
