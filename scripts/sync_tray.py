@@ -132,6 +132,17 @@ class SyncWorker:
                 except Exception:
                     self.summoner_name = None
 
+                # 轮询待办消息（自定义房间聊天等）
+                try:
+                    r = httpx.get(f"{self.server_url}/api/sync/pending", timeout=5)
+                    pd = r.json()
+                    chat_msg = pd.get("chat_message")
+                    if chat_msg:
+                        logger.info("收到待发送的房间消息")
+                        lcu.send_custom_game_chat(chat_msg)
+                except Exception as e:
+                    logger.warning(f"轮询待办失败: {e}")
+
                 # 判定是否需要同步
                 current_key = self._session_key(lcu)
                 now = time.time()
