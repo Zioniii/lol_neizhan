@@ -7,11 +7,12 @@ import {
   createMatch,
   deleteMatch,
   getSummonerStats,
+  sendPendingChat,
   type MatchOut,
   type SummonerOut,
 } from '../api'
 import {
-  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, RefreshCw, Settings,
+  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, RefreshCw, Settings, Send,
 } from 'lucide-react'
 
 export default function MatchPage() {
@@ -39,6 +40,10 @@ export default function MatchPage() {
       setSpinning(false)
       qc.invalidateQueries({ queryKey: ['matches'] })
     },
+  })
+
+  const sendChatMut = useMutation({
+    mutationFn: (matchId: number) => sendPendingChat(matchId),
   })
 
   const toggle = (id: number) => {
@@ -260,9 +265,15 @@ export default function MatchPage() {
                 </div>
               </div>
 
-              <button className="btn-secondary w-full text-sm" onClick={() => setResult(null)}>
-                <RefreshCw className="w-4 h-4" />重新分组
-              </button>
+              <div className="flex gap-2">
+                <button className="btn-secondary flex-1 text-sm" onClick={() => setResult(null)}>
+                  <RefreshCw className="w-4 h-4" />重新分组
+                </button>
+                <button className="btn-primary flex-1 text-sm" disabled={sendChatMut.isPending}
+                  onClick={() => result && sendChatMut.mutate(result.id)}>
+                  <Send className="w-4 h-4" />发送到房间
+                </button>
+              </div>
             </motion.div>
           ) : (
             <div className="card rounded-xl h-full flex items-center justify-center p-8 min-h-[300px]">

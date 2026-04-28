@@ -226,3 +226,9 @@ export function getLcuStatus() {
 export function refreshLcu() {
   return request<{ connected: boolean; message: string }>('/lcu-refresh', { method: 'POST' })
 }
+
+// ── pending chat ──
+
+export function sendPendingChat(match_id: number) {
+  return request<{ ok: boolean; message: string }>(`/sync/pending-chat?match_id=${match_id}`, { method: 'POST' })
+}

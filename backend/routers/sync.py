@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Summoner, GameRecord, SyncLog
+from ..models import Summoner, GameRecord, SyncLog, Match, MatchParticipant
 from ..schemas import SyncRequest, SyncLogOut, SyncPushRequest, SyncPushResponse
 from ..lcu import LcuManager, SgpClient, TENCENT_SERVERS, SERVER_NAMES
 from ..champion_map import to_chinese
@@ -421,3 +421,29 @@ def check_pending_chat():
     if msg:
         _pending_chat_message = None
     return {"chat_message": msg}
+
+
+@router.post("/pending-chat")
+def resend_pending_chat(match_id: int, db: Session = Depends(get_db)):
+    """前端手动触发：重新发送指定内战场次的分组结果到自定义房间"""
+    match = db.query(Match).filter(Match.id == match_id).first()
+    if not match:
+        raise HTTPException(404, "内战记录不存在")
+
+    blue_names: list[str] = []
+    red_names: list[str] = []
+    for mp in match.participants:
+        nickname = mp.summoner.nickname + (" (临时)" if mp.summoner.is_temporary else "")
+        if mp.team == 0:
+            blue_names.append(nickname)
+        else:
+            red_names.append(nickname)
+
+    msg = (
+        f"────────\n"
+        f"【内战管理】分组结果\n"
+        f"蓝方 ({len(blue_names)}人): {', '.join(blue_names)}\n"
+        f"红方 ({len(red_names)}人): {', '.join(red_names)}"
+    )
+    set_pending_chat_message(msg)
+    return {"ok": True, "message": "已通知 agent 发送"}
