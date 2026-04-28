@@ -284,8 +284,7 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
                     blue.append(sid)
                 else:
                     red.append(sid)
-    else:
-        remaining_fixed = []  # consumed below
+        remaining_fixed = []  # 已在 Phase 2 分配完毕
 
     # Phase 3: Random fill for remaining fixed + all temp players
     random_fill = remaining_fixed + temp_ids
@@ -327,6 +326,31 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
                 is_temporary=mp.summoner.is_temporary,
             )
         )
+
+    # 尝试将分组结果发送到自定义房间
+    try:
+        from ..main import lcu_manager
+
+        blue_names = [
+            p.summoner_nickname + (" (临时)" if p.is_temporary else "")
+            for p in po_list
+            if p.team == 0
+        ]
+        red_names = [
+            p.summoner_nickname + (" (临时)" if p.is_temporary else "")
+            for p in po_list
+            if p.team == 1
+        ]
+        msg = (
+            f"────────\n"
+            f"【内战管理】分组结果\n"
+            f"蓝方 ({len(blue_names)}人): {', '.join(blue_names)}\n"
+            f"红方 ({len(red_names)}人): {', '.join(red_names)}"
+        )
+        lcu_manager.send_custom_game_chat(msg)
+    except Exception:
+        pass  # 不阻塞分组结果
+
     return MatchOut(
         id=match.id,
         name=match.name,

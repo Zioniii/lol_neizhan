@@ -6,10 +6,12 @@ LCU API 和 Riot Client API 的 HTTP 客户端。
 全球服: 使用 LCU 端口 + Riot Client 端口
 """
 import base64
+import logging
 import time
 import httpx
 from .lockfile import LcuAuth, discover, ClientDiscovery
 
+logger = logging.getLogger(__name__)
 USER_AGENT = "LeagueOfLegendsClient/14.13.596.7996 (rcp-be-lol-match-history)"
 TIMEOUT = 12.5
 
@@ -110,6 +112,35 @@ class LcuManager:
         if aliases and len(aliases) > 0:
             return aliases[0].get("puuid")
         return None
+
+    def send_custom_game_chat(self, message: str, msg_type: str = "chat") -> bool:
+        """发送消息到当前自定义房间聊天"""
+        if not self._lcu_http:
+            return False
+
+        try:
+            r = self._lcu_http.get("/lol-chat/v1/conversations")
+            r.raise_for_status()
+            conversations = r.json()
+
+            custom_game = next(
+                (c for c in conversations if c.get("type") == "customGame"), None
+            )
+            if not custom_game:
+                logger.info("未找到自定义房间会话")
+                return False
+
+            conv_id = custom_game["id"]
+            r2 = self._lcu_http.post(
+                f"/lol-chat/v1/conversations/{conv_id}/messages",
+                json={"body": message, "type": msg_type},
+            )
+            r2.raise_for_status()
+            logger.info(f"已发送消息到自定义房间 (conv={conv_id})")
+            return True
+        except Exception as e:
+            logger.warning(f"发送自定义房间消息失败: {e}")
+            return False
 
     def get_current_summoner(self) -> dict | None:
         """

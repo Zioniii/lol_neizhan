@@ -31,6 +31,12 @@ scripts/         — Standalone sync tools (no FastAPI dependency)
 build/           — PyInstaller build output (LOL-Sync-Agent.exe)
 ```
 
+## Reference Projects
+
+- **LeagueAkari** — `D:\upupup\code\lol_api\LeagueAkari-main` (Electron + Vue 3 + TypeScript)
+  LCU client toolkit with chat message sending, auto-gameflow, and custom game room interaction.
+  Mention "参考项目" to refer to this.
+
 ## Key Design Decisions
 
 - **Hybrid deployment**: Server is stateless (no LCU). Sync agents run on each player's machine and push via `POST /api/sync/push`.
