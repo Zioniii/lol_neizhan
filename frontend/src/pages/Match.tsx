@@ -40,6 +40,7 @@ export default function MatchPage() {
       setSpinning(false)
       qc.invalidateQueries({ queryKey: ['matches'] })
     },
+    onSettled: () => setSpinning(false),
   })
 
   const sendChatMut = useMutation({
