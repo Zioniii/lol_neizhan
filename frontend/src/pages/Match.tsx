@@ -8,12 +8,14 @@ import {
   deleteMatch,
   getSummonerStats,
   sendPendingChat,
+  getLobby,
+  autoMatchFromLobby,
   type MatchOut,
   type MatchListOut,
   type SummonerOut,
 } from '../api'
 import {
-  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, Settings, Send, ChevronLeft, ChevronRight,
+  Swords, Users, UserPlus, Shuffle, Trash2, ChevronDown, X, AlertCircle, Trophy, History, Settings, Send, ChevronLeft, ChevronRight, Radio, Zap,
 } from 'lucide-react'
 
 export default function MatchPage() {
@@ -24,6 +26,7 @@ export default function MatchPage() {
   const { data: summoners } = useQuery({ queryKey: ['summoners'], queryFn: listSummoners })
   const { data: matchesData } = useQuery({ queryKey: ['matches', historyPage], queryFn: () => listMatches(historyPage, historyPageSize) })
   const { data: statsData } = useQuery({ queryKey: ['summoner-stats'], queryFn: getSummonerStats, staleTime: 30_000 })
+  const { data: lobbyData } = useQuery({ queryKey: ['lobby'], queryFn: getLobby, refetchInterval: 5_000, staleTime: 3_000 })
   const matches = matchesData?.items
   const matchesTotal = matchesData?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(matchesTotal / historyPageSize))
@@ -54,6 +57,17 @@ export default function MatchPage() {
   const sendChatMut = useMutation({
     mutationFn: (matchId: number) => sendPendingChat(matchId),
   })
+
+  const autoMatchMut = useMutation({
+    mutationFn: () => autoMatchFromLobby(),
+    onSuccess: (data) => {
+      setResult(data)
+      qc.invalidateQueries({ queryKey: ['matches'] })
+      setHistoryPage(1)
+    },
+  })
+
+  const lobby = lobbyData?.lobby
 
   const toggle = (id: number) => {
     const next = new Set(selected)
@@ -97,6 +111,40 @@ export default function MatchPage() {
         <h2 className="page-title">内战分组</h2>
         <p className="page-subtitle">选择选手，随机分边</p>
       </div>
+
+      {/* Lobby Detection */}
+      {lobby && lobby.is_custom_game && (
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card rounded-xl p-4 border-l-4 border-l-text-primary"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2 h-2 rounded-full bg-text-primary animate-pulse" />
+            <span className="text-sm font-bold text-text-primary">检测到自定义房间</span>
+            {lobby.game_mode && <span className="text-xs text-text-muted">({lobby.game_mode})</span>}
+            <span className="badge ml-auto">{lobby.members.length}人</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {lobby.members.map((m, i) => (
+              <span key={m.puuid || i} className="text-xs px-2.5 py-1 rounded-lg bg-bg-secondary text-text-secondary border border-border-default">
+                {m.game_name ? `${m.game_name}#${m.tag_line}` : m.summoner_name ?? '未知'}
+              </span>
+            ))}
+          </div>
+          <button
+            className="btn-primary w-full text-sm py-2.5 rounded-lg flex items-center justify-center gap-2"
+            disabled={autoMatchMut.isPending}
+            onClick={() => autoMatchMut.mutate()}
+          >
+            <Zap className="w-4 h-4" />
+            {autoMatchMut.isPending ? '分组中...' : '一键分组'}
+          </button>
+          {autoMatchMut.isError && (
+            <p className="text-xs text-text-muted mt-2 text-center">{(autoMatchMut.error as Error).message}</p>
+          )}
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Left: Selection Panel */}

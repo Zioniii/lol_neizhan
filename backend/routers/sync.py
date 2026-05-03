@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Summoner, GameRecord, SyncLog, Match, MatchParticipant
-from ..schemas import SyncRequest, SyncLogOut, SyncPushRequest, SyncPushResponse
+from ..schemas import SyncRequest, SyncLogOut, SyncPushRequest, SyncPushResponse, LobbyUpdateRequest
 from ..lcu import LcuManager, SgpClient, TENCENT_SERVERS, SERVER_NAMES
 from ..champion_map import to_chinese
 
@@ -432,18 +432,138 @@ def resend_pending_chat(match_id: int, db: Session = Depends(get_db)):
 
     blue_names: list[str] = []
     red_names: list[str] = []
+    blue_ids: list[int] = []
+    red_ids: list[int] = []
     for mp in match.participants:
-        nickname = mp.summoner.nickname + (" (临时)" if mp.summoner.is_temporary else "")
         if mp.team == 0:
-            blue_names.append(nickname)
+            blue_names.append(mp.summoner.nickname)
+            blue_ids.append(mp.summoner_id)
         else:
-            red_names.append(nickname)
+            red_names.append(mp.summoner.nickname)
+            red_ids.append(mp.summoner_id)
 
+    from .matches import _get_win_rates
+    wr_map = _get_win_rates(db, blue_ids + red_ids)
+    blue_wr = round(sum(wr_map.get(sid, 0.5) for sid in blue_ids) / len(blue_ids) * 100, 1) if blue_ids else 50.0
+    red_wr = round(sum(wr_map.get(sid, 0.5) for sid in red_ids) / len(red_ids) * 100, 1) if red_ids else 50.0
     msg = (
         f"────────\n"
         f"【内战管理】分组结果\n"
         f"蓝方 ({len(blue_names)}人): {', '.join(blue_names)}\n"
-        f"红方 ({len(red_names)}人): {', '.join(red_names)}"
+        f"红方 ({len(red_names)}人): {', '.join(red_names)}\n"
+        f"预估胜率 蓝方 {blue_wr}% vs 红方 {red_wr}%"
     )
     set_pending_chat_message(msg)
     return {"ok": True, "message": "已通知 agent 发送"}
+
+
+# ── Lobby & Game Status (agent 推送，前端轮询) ──
+
+_lobby_state: dict | None = None
+
+
+@router.post("/lobby/update")
+def update_lobby(req: LobbyUpdateRequest):
+    global _lobby_state
+    _lobby_state = req.model_dump()
+    return {"ok": True}
+
+
+@router.get("/lobby")
+def get_lobby():
+    return {"lobby": _lobby_state}
+
+
+@router.post("/lobby/clear")
+def clear_lobby():
+    global _lobby_state
+    _lobby_state = None
+    return {"ok": True}
+
+
+@router.post("/lobby/auto-match")
+def auto_match_from_lobby(db: Session = Depends(get_db)):
+    global _lobby_state
+    if not _lobby_state or not _lobby_state.get("members"):
+        raise HTTPException(400, "未检测到房间信息")
+
+    members = _lobby_state["members"]
+    puuid_to_summoner = {}
+    for s in db.query(Summoner).all():
+        if s.puuid:
+            puuid_to_summoner[s.puuid.lower()] = s
+
+    matched_ids = []
+    unmatched = []
+    for m in members:
+        puuid = (m.get("puuid") or "").lower()
+        summoner = puuid_to_summoner.get(puuid)
+        if summoner:
+            matched_ids.append(summoner.id)
+        else:
+            name = m.get("summoner_name") or m.get("game_name") or "Unknown"
+            unmatched.append(name)
+
+    if len(matched_ids) < 2:
+        raise HTTPException(400, f"匹配到的选手不足2人，无法分组。未匹配: {', '.join(unmatched)}")
+
+    from .matches import assign_teams, Match, MatchParticipant, MatchParticipantOut, MatchOut
+    blue, red = assign_teams(db, matched_ids, [], side_limit=2, win_rate_balance=True)
+
+    match = Match(name="自动分组")
+    db.add(match)
+    db.flush()
+
+    participants = []
+    for sid in blue:
+        mp = MatchParticipant(match_id=match.id, summoner_id=sid, team=0)
+        db.add(mp)
+        participants.append(mp)
+    for sid in red:
+        mp = MatchParticipant(match_id=match.id, summoner_id=sid, team=1)
+        db.add(mp)
+        participants.append(mp)
+
+    db.commit()
+    db.refresh(match)
+
+    po_list = []
+    for mp in participants:
+        db.refresh(mp)
+        po_list.append(
+            MatchParticipantOut(
+                id=mp.id,
+                summoner_id=mp.summoner_id,
+                summoner_name=f"{mp.summoner.game_name}#{mp.summoner.tag_line}",
+                summoner_nickname=mp.summoner.nickname,
+                team=mp.team,
+                is_temporary=mp.summoner.is_temporary,
+            )
+        )
+
+    try:
+        blue_names = [p.summoner_nickname for p in po_list if p.team == 0]
+        red_names = [p.summoner_nickname for p in po_list if p.team == 1]
+        blue_ids = [p.summoner_id for p in po_list if p.team == 0]
+        red_ids = [p.summoner_id for p in po_list if p.team == 1]
+        from .matches import _get_win_rates
+        wr_map = _get_win_rates(db, blue_ids + red_ids)
+        blue_wr = round(sum(wr_map.get(sid, 0.5) for sid in blue_ids) / len(blue_ids) * 100, 1) if blue_ids else 50.0
+        red_wr = round(sum(wr_map.get(sid, 0.5) for sid in red_ids) / len(red_ids) * 100, 1) if red_ids else 50.0
+        msg = (
+            f"────────\n"
+            f"【内战管理】分组结果\n"
+            f"蓝方 ({len(blue_names)}人): {', '.join(blue_names)}\n"
+            f"红方 ({len(red_names)}人): {', '.join(red_names)}\n"
+            f"预估胜率 蓝方 {blue_wr}% vs 红方 {red_wr}%"
+        )
+        set_pending_chat_message(msg)
+    except Exception:
+        pass
+
+    return MatchOut(
+        id=match.id,
+        name=match.name,
+        created_at=match.created_at,
+        participants=po_list,
+    )

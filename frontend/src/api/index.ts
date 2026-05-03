@@ -239,3 +239,29 @@ export function refreshLcu() {
 export function sendPendingChat(match_id: number) {
   return request<{ ok: boolean; message: string }>(`/sync/pending-chat?match_id=${match_id}`, { method: 'POST' })
 }
+
+// ── Lobby ──
+
+export interface LobbyMember {
+  puuid: string
+  summoner_name: string | null
+  game_name: string | null
+  tag_line: string | null
+}
+
+export interface LobbyState {
+  lobby: {
+    is_custom_game: boolean
+    game_mode: string | null
+    members: LobbyMember[]
+  } | null
+}
+
+export function getLobby() {
+  return request<LobbyState>('/sync/lobby')
+}
+
+export function autoMatchFromLobby() {
+  return request<MatchOut>('/sync/lobby/auto-match', { method: 'POST' })
+}
+

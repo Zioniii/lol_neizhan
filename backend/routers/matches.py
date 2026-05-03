@@ -47,7 +47,6 @@ def list_matches(page: int = 1, page_size: int = 20, db: Session = Depends(get_d
             )
         )
     return {"items": items, "total": total, "page": page, "page_size": page_size}
-    return result
 
 
 # ── 以下 /history 必须在 /{match_id} 之前，避免被泛型路由捕获 ──
@@ -224,6 +223,58 @@ def _get_win_rates(db: Session, summoner_ids: list[int]) -> dict[int, float]:
     return wr_map
 
 
+def assign_teams(db: Session, summoner_ids: list[int], temp_ids: list[int], side_limit: int = 2, win_rate_balance: bool = False) -> tuple[list[int], list[int]]:
+    """3-phase team assignment. Returns (blue_ids, red_ids)."""
+    total = len(summoner_ids) + len(temp_ids)
+    fixed_ids = list(summoner_ids)
+    blue: list[int] = []
+    red: list[int] = []
+
+    # Phase 1: Side-limit pinning
+    max_per_team = (total + 1) // 2
+    if side_limit > 0:
+        pinned: list[tuple[int, int]] = []
+        for sid in fixed_ids:
+            forced = _get_forced_team(db, sid, side_limit)
+            if forced is not None:
+                pinned.append((sid, forced))
+        for sid, forced in pinned:
+            if forced == 0 and len(blue) < max_per_team:
+                blue.append(sid)
+            elif forced == 1 and len(red) < max_per_team:
+                red.append(sid)
+
+    # Phase 2: Win-rate balance
+    remaining_fixed = [sid for sid in fixed_ids if sid not in blue and sid not in red]
+    if win_rate_balance and remaining_fixed:
+        wrs = _get_win_rates(db, fixed_ids)
+        remaining_fixed.sort(key=lambda sid: wrs.get(sid, 0.5), reverse=True)
+        for sid in remaining_fixed:
+            if len(blue) < len(red):
+                blue.append(sid)
+            elif len(red) < len(blue):
+                red.append(sid)
+            else:
+                blue_total = sum(wrs.get(s, 0.5) for s in blue)
+                red_total = sum(wrs.get(s, 0.5) for s in red)
+                if blue_total <= red_total:
+                    blue.append(sid)
+                else:
+                    red.append(sid)
+        remaining_fixed = []
+
+    # Phase 3: Random fill
+    random_fill = remaining_fixed + temp_ids
+    random.shuffle(random_fill)
+    for sid in random_fill:
+        if len(blue) <= len(red):
+            blue.append(sid)
+        else:
+            red.append(sid)
+
+    return blue, red
+
+
 @router.post("", response_model=MatchOut)
 def create_match(data: MatchCreate, db: Session = Depends(get_db)):
     total = len(data.summoner_ids) + len(data.temp_players)
@@ -261,53 +312,7 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
         raise HTTPException(400, "存在无效的召唤师 ID")
 
     # ── 3-phase team assignment ──
-    fixed_ids = list(data.summoner_ids)
-    blue: list[int] = []
-    red: list[int] = []
-
-    # Phase 1: Side-limit pinning (capped to prevent imbalance)
-    max_per_team = (total + 1) // 2  # ceil(total/2), e.g. 6→3, 7→4
-    if data.side_limit > 0:
-        # Sort by consecutive same-side streak (longest first = most urgent)
-        pinned: list[tuple[int, int]] = []  # (summoner_id, forced_team)
-        for sid in fixed_ids:
-            forced = _get_forced_team(db, sid, data.side_limit)
-            if forced is not None:
-                pinned.append((sid, forced))
-        # Assign only up to max_per_team per side; excess stays for later phases
-        for sid, forced in pinned:
-            if forced == 0 and len(blue) < max_per_team:
-                blue.append(sid)
-            elif forced == 1 and len(red) < max_per_team:
-                red.append(sid)
-
-    # Phase 2: Win-rate balance (only for unpinned fixed players)
-    remaining_fixed = [sid for sid in fixed_ids if sid not in blue and sid not in red]
-    if data.win_rate_balance and remaining_fixed:
-        wrs = _get_win_rates(db, fixed_ids)
-        remaining_fixed.sort(key=lambda sid: wrs.get(sid, 0.5), reverse=True)
-        for sid in remaining_fixed:
-            if len(blue) < len(red):
-                blue.append(sid)
-            elif len(red) < len(blue):
-                red.append(sid)
-            else:
-                blue_total = sum(wrs.get(s, 0.5) for s in blue)
-                red_total = sum(wrs.get(s, 0.5) for s in red)
-                if blue_total <= red_total:
-                    blue.append(sid)
-                else:
-                    red.append(sid)
-        remaining_fixed = []  # 已在 Phase 2 分配完毕
-
-    # Phase 3: Random fill for remaining fixed + all temp players
-    random_fill = remaining_fixed + temp_ids
-    random.shuffle(random_fill)
-    for sid in random_fill:
-        if len(blue) <= len(red):
-            blue.append(sid)
-        else:
-            red.append(sid)
+    blue, red = assign_teams(db, list(data.summoner_ids), temp_ids, data.side_limit, data.win_rate_balance)
 
     match = Match(name=data.name)
     db.add(match)
@@ -345,21 +350,19 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
     try:
         from .sync import set_pending_chat_message
 
-        blue_names = [
-            p.summoner_nickname + (" (临时)" if p.is_temporary else "")
-            for p in po_list
-            if p.team == 0
-        ]
-        red_names = [
-            p.summoner_nickname + (" (临时)" if p.is_temporary else "")
-            for p in po_list
-            if p.team == 1
-        ]
+        blue_names = [p.summoner_nickname for p in po_list if p.team == 0]
+        red_names = [p.summoner_nickname for p in po_list if p.team == 1]
+        blue_ids = [p.summoner_id for p in po_list if p.team == 0]
+        red_ids = [p.summoner_id for p in po_list if p.team == 1]
+        wr_map = _get_win_rates(db, blue_ids + red_ids)
+        blue_wr = round(sum(wr_map.get(sid, 0.5) for sid in blue_ids) / len(blue_ids) * 100, 1) if blue_ids else 50.0
+        red_wr = round(sum(wr_map.get(sid, 0.5) for sid in red_ids) / len(red_ids) * 100, 1) if red_ids else 50.0
         msg = (
             f"────────\n"
             f"【内战管理】分组结果\n"
             f"蓝方 ({len(blue_names)}人): {', '.join(blue_names)}\n"
-            f"红方 ({len(red_names)}人): {', '.join(red_names)}"
+            f"红方 ({len(red_names)}人): {', '.join(red_names)}\n"
+            f"预估胜率 蓝方 {blue_wr}% vs 红方 {red_wr}%"
         )
         set_pending_chat_message(msg)
     except Exception:

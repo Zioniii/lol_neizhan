@@ -131,3 +131,21 @@ class LcuStatus(BaseModel):
     connected: bool
     summoner_name: Optional[str] = None
     region: Optional[str] = None
+
+
+# ── Lobby ──
+
+class LobbyMember(BaseModel):
+    puuid: str
+    summoner_name: Optional[str] = None
+    game_name: Optional[str] = None
+    tag_line: Optional[str] = None
+
+
+class LobbyUpdateRequest(BaseModel):
+    is_custom_game: bool
+    game_mode: Optional[str] = None
+    lobby_id: Optional[str] = None
+    members: list[LobbyMember]
+
+

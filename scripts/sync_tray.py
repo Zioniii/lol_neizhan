@@ -103,6 +103,8 @@ class SyncWorker:
         self._thread.start()
         self._chat_thread = threading.Thread(target=self._chat_poll_loop, daemon=True)
         self._chat_thread.start()
+        self._gameflow_thread = threading.Thread(target=self._gameflow_loop, daemon=True)
+        self._gameflow_thread.start()
         self.status_text = "运行中"
 
     def stop(self):
@@ -205,6 +207,59 @@ class SyncWorker:
                     lcu.send_custom_game_chat(chat_msg)
             except Exception as e:
                 logger.debug(f"轮询房间消息失败: {e}")
+            self._stop_event.wait(2)
+
+    def _gameflow_loop(self):
+        """独立线程：轮询 LCU gameflow 状态，检测自定义房间和对局状态"""
+        last_phase = None
+        while not self._stop_event.is_set():
+            try:
+                lcu = LcuManager()
+                if not lcu.refresh() or not lcu._lcu_http:
+                    self._stop_event.wait(2)
+                    continue
+
+                r = lcu._lcu_http.get("/lol-gameflow/v1/gameflow-phase")
+                if r.status_code != 200:
+                    self._stop_event.wait(2)
+                    continue
+
+                phase = r.json()
+
+                if phase == "Lobby" and last_phase != "Lobby":
+                    try:
+                        lobby_r = lcu._lcu_http.get("/lol-lobby/v2/lobby")
+                        if lobby_r.status_code == 200:
+                            lobby_data = lobby_r.json()
+                            game_mode = lobby_data.get("gameConfig", {}).get("gameMode", "")
+                            is_custom = game_mode == "CUSTOM"
+                            if is_custom:
+                                members_r = lcu._lcu_http.get("/lol-lobby/v2/lobby/members")
+                                members = members_r.json() if members_r.status_code == 200 else []
+                                httpx.post(f"{self.server_url}/api/sync/lobby/update", json={
+                                    "is_custom_game": True,
+                                    "game_mode": game_mode,
+                                    "members": [{
+                                        "puuid": m.get("puuid", ""),
+                                        "summoner_name": m.get("summonerName", ""),
+                                        "game_name": m.get("gameName", ""),
+                                        "tag_line": m.get("tagLine", ""),
+                                    } for m in members],
+                                }, timeout=5)
+                                logger.info(f"检测到自定义房间: {len(members)} 人")
+                    except Exception as e:
+                        logger.debug(f"房间检测失败: {e}")
+
+                elif last_phase == "Lobby" and phase != "Lobby":
+                    try:
+                        httpx.post(f"{self.server_url}/api/sync/lobby/clear", timeout=5)
+                    except Exception:
+                        pass
+
+                last_phase = phase
+            except Exception as e:
+                logger.debug(f"gameflow 轮询异常: {e}")
+
             self._stop_event.wait(2)
 
     def _do_sync(self, lcu: LcuManager):
