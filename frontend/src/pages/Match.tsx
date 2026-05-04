@@ -91,17 +91,28 @@ export default function MatchPage() {
 
   const blue = result?.participants.filter((p) => p.team === 0) ?? []
   const red = result?.participants.filter((p) => p.team === 1) ?? []
-  const blueAvgWr = winRateBalance && statsData && blue.length > 0
-    ? (blue.reduce((sum, p) => {
-        const stat = statsData.find(s => s.summoner_id === p.summoner_id)
-        return sum + (stat?.win_rate ?? 50)
-      }, 0) / blue.length).toFixed(1)
+  const wrToElo = (wr: number) => {
+    const clamped = Math.max(0.01, Math.min(0.99, wr / 100))
+    return -400 * Math.log10(1 / clamped - 1) + 1500
+  }
+  const eloToWinProb = (eloA: number, eloB: number) => 1 / (1 + Math.pow(10, (eloB - eloA) / 400))
+
+  const teamElo = (team: typeof blue) => {
+    if (team.length === 0 || !statsData) return null
+    const sum = team.reduce((s, p) => {
+      const stat = statsData.find(x => x.summoner_id === p.summoner_id)
+      return s + wrToElo(stat?.win_rate ?? 50)
+    }, 0)
+    return sum / team.length
+  }
+
+  const blueElo = teamElo(blue)
+  const redElo = teamElo(red)
+  const blueWinProb = blueElo !== null && redElo !== null
+    ? (eloToWinProb(blueElo, redElo) * 100).toFixed(1)
     : null
-  const redAvgWr = winRateBalance && statsData && red.length > 0
-    ? (red.reduce((sum, p) => {
-        const stat = statsData.find(s => s.summoner_id === p.summoner_id)
-        return sum + (stat?.win_rate ?? 50)
-      }, 0) / red.length).toFixed(1)
+  const redWinProb = blueWinProb !== null
+    ? (100 - Number(blueWinProb)).toFixed(1)
     : null
 
   return (
@@ -277,14 +288,14 @@ export default function MatchPage() {
                     <span className="text-text-primary font-bold text-lg">红</span>
                   </div>
                 </div>
-                {blueAvgWr && redAvgWr && (
+                {blueWinProb && redWinProb && (
                   <div className="flex items-center justify-center gap-8 mt-2 text-[11px] font-semibold">
-                    <span className={Number(blueAvgWr) >= Number(redAvgWr) ? 'text-text-primary' : 'text-text-muted'}>
-                      avg {blueAvgWr}%
+                    <span className={Number(blueWinProb) >= Number(redWinProb) ? 'text-text-primary' : 'text-text-muted'}>
+                      预估 {blueWinProb}%
                     </span>
                     <span className="text-text-muted text-[10px]">胜率</span>
-                    <span className={Number(redAvgWr) >= Number(blueAvgWr) ? 'text-text-primary' : 'text-text-muted'}>
-                      avg {redAvgWr}%
+                    <span className={Number(redWinProb) >= Number(blueWinProb) ? 'text-text-primary' : 'text-text-muted'}>
+                      预估 {redWinProb}%
                     </span>
                   </div>
                 )}

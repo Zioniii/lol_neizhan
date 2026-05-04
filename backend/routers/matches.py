@@ -354,9 +354,17 @@ def create_match(data: MatchCreate, db: Session = Depends(get_db)):
         red_names = [p.summoner_nickname for p in po_list if p.team == 1]
         blue_ids = [p.summoner_id for p in po_list if p.team == 0]
         red_ids = [p.summoner_id for p in po_list if p.team == 1]
+        import math
         wr_map = _get_win_rates(db, blue_ids + red_ids)
-        blue_wr = round(sum(wr_map.get(sid, 0.5) for sid in blue_ids) / len(blue_ids) * 100, 1) if blue_ids else 50.0
-        red_wr = round(sum(wr_map.get(sid, 0.5) for sid in red_ids) / len(red_ids) * 100, 1) if red_ids else 50.0
+        def _wr_to_elo(wr):
+            clamped = max(0.01, min(0.99, wr))
+            return -400 * math.log10(1 / clamped - 1) + 1500
+        def _elo_to_win_prob(elo_a, elo_b):
+            return 1 / (1 + 10 ** ((elo_b - elo_a) / 400))
+        blue_elo = sum(_wr_to_elo(wr_map.get(sid, 0.5)) for sid in blue_ids) / len(blue_ids) if blue_ids else 1500
+        red_elo = sum(_wr_to_elo(wr_map.get(sid, 0.5)) for sid in red_ids) / len(red_ids) if red_ids else 1500
+        blue_wr = round(_elo_to_win_prob(blue_elo, red_elo) * 100, 1) if blue_ids and red_ids else 50.0
+        red_wr = round(100 - blue_wr, 1)
         msg = (
             f"────────\n"
             f"【内战管理】分组结果\n"
