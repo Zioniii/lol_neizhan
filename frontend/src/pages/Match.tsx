@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import {
@@ -32,14 +32,24 @@ export default function MatchPage() {
   const totalPages = Math.max(1, Math.ceil(matchesTotal / historyPageSize))
   const active = summoners?.filter((s) => s.is_active) ?? []
 
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [tempNames, setTempNames] = useState<string[]>([])
+  const [selected, setSelected] = useState<Set<number>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('match_selected') || '[]')) } catch { return new Set() }
+  })
+  const [tempNames, setTempNames] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('match_tempNames') || '[]') } catch { return [] }
+  })
   const [tempInput, setTempInput] = useState('')
-  const [result, setResult] = useState<MatchOut | null>(null)
+  const [result, setResult] = useState<MatchOut | null>(() => {
+    try { return JSON.parse(localStorage.getItem('match_result') || 'null') } catch { return null }
+  })
   const [spinning, setSpinning] = useState(false)
   const [sideLimit, setSideLimit] = useState(2)
   const [winRateBalance, setWinRateBalance] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+
+  useEffect(() => { localStorage.setItem('match_selected', JSON.stringify([...selected])) }, [selected])
+  useEffect(() => { localStorage.setItem('match_tempNames', JSON.stringify(tempNames)) }, [tempNames])
+  useEffect(() => { localStorage.setItem('match_result', JSON.stringify(result)) }, [result])
 
   const totalCount = selected.size + tempNames.length
 
