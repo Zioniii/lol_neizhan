@@ -102,7 +102,7 @@ pyinstaller LOL-Sync-Agent.spec
   journalctl -u lol-neizhan.service -n 50 # view recent logs
   ```
 - **Deploy**: SCP changed files to `/opt/lol_neizhan/`, then `systemctl restart lol-neizhan.service`
-  - Frontend: `npm run build` → SCP `frontend/dist/` → `/opt/lol_neizhan/dist/`
+  - Frontend: `npm run build` → SCP `frontend/dist/` → `/opt/lol_neizhan/frontend/dist/`
   - Backend: SCP changed `.py` files → `/opt/lol_neizhan/backend/...`
   - No need to restart for static file changes, only for backend changes
 - **API base URL**: `http://122.51.14.250:8766/api`
